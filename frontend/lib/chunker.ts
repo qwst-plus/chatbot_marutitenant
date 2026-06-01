@@ -73,7 +73,6 @@ export function chunkByQAPair(text: string): string[] {
 export function chunkBySemantic(text: string): string[] {
   const chunks: string[] = [];
   // 見出し行（第X条・##・数字.）を区切りとして分割
-  const headingPattern = /^(?:第\d+条|#{1,3}\s|(?:\d+)[.．）]\s)/m;
   const sections = text.split(/\n(?=(?:第\d+条|#{1,3}\s|\d+[.．）]\s))/);
 
   for (const section of sections) {

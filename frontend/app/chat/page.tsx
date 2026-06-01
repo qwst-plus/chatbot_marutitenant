@@ -1,7 +1,7 @@
 // app/chat/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ChatContainer from "@/components/ChatContainer";
 import ChatBubble from "@/components/ChatBubble";
 import ChatInput from "@/components/ChatInput";
@@ -46,11 +46,6 @@ export default function ChatPage() {
 
   // 自動スクロール
   const bottomRef = useRef<HTMLDivElement | null>(null);
-
-  // 送信する履歴（/api/chat が messages 対応していれば会話継続に使える）
-  const outboundMessages = useMemo(() => {
-    return messages.slice(-MAX_SEND_TURNS);
-  }, [messages]);
 
   // 初回：localStorage から復元
   useEffect(() => {
@@ -138,7 +133,8 @@ export default function ChatPage() {
         }),
       });
 
-      const data: any = await res.json().catch(() => ({}));
+      type ChatApiResponse = { answer?: string; message_id?: string; conversation_id?: string; error?: string };
+      const data = await res.json().catch(() => ({})) as ChatApiResponse;
 
       if (!res.ok) {
         const msg = data?.error ?? `API error: ${res.status} ${res.statusText}`;
@@ -159,11 +155,11 @@ export default function ChatPage() {
           conversationId: data?.conversation_id,
         },
       ]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: `エラー: ${e?.message ?? String(e)}` },
+        { role: "assistant", content: `エラー: ${e instanceof Error ? e.message : String(e)}` },
       ]);
     } finally {
       setThinking(false);

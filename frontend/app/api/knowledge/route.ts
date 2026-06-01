@@ -4,8 +4,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
-const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID ?? "default";
-
 // GET /api/knowledge?page=1&limit=50
 // ナレッジ一覧を取得（source_url / title / category / chunk_strategyを返す）
 export async function GET(req: NextRequest) {

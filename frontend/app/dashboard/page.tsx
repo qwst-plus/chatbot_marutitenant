@@ -106,16 +106,21 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    fetch(`/api/dashboard/stats?year=${selectedYear}&month=${selectedMonth}`)
-      .then((res) => {
+    async function load() {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(`/api/dashboard/stats?year=${selectedYear}&month=${selectedMonth}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json() as Promise<StatsResponse>
-      })
-      .then((json) => setData(mapToProps(json, selectedYear, selectedMonth)))
-      .catch((err: Error) => setError(err.message ?? String(err)))
-      .finally(() => setLoading(false))
+        const json = await res.json() as StatsResponse
+        setData(mapToProps(json, selectedYear, selectedMonth))
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setLoading(false)
+      }
+    }
+    void load()
   }, [selectedYear, selectedMonth])
 
   const handleCsvDownload = () => {

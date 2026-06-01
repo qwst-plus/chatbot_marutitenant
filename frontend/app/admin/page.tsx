@@ -45,10 +45,10 @@ export default function AdminPage() {
       }
 
       setRows(data || []);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       setRows([]);
-      setErrorMsg(e?.message ?? String(e));
+      setErrorMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }

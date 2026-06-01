@@ -11,6 +11,13 @@ type Msg = {
   feedback?: 1 | -1;
 };
 
+type ChatApiResponse = {
+  answer?: string;
+  message_id?: string;
+  conversation_id?: string;
+  error?: string;
+};
+
 type Props = {
   /** 最初から開いた状態にしたい場合 true（iframe内で常時表示など） */
   defaultOpen?: boolean;
@@ -106,14 +113,14 @@ export default function ChatWidget({
           category_id: cat.id,
         }),
       });
-      const data: any = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({})) as ChatApiResponse;
       const answer = data?.answer ?? "ご質問をどうぞ。";
       setMessages((m) => [...m, {
         role: "assistant", content: String(answer),
         messageId: data?.message_id, conversationId: data?.conversation_id,
       }]);
-    } catch (e: any) {
-      setMessages((m) => [...m, { role: "assistant", content: `エラー：${e?.message ?? e}` }]);
+    } catch (e: unknown) {
+      setMessages((m) => [...m, { role: "assistant", content: `エラー：${e instanceof Error ? e.message : String(e)}` }]);
     } finally {
       setThinking(false);
     }
@@ -147,7 +154,7 @@ export default function ChatWidget({
         throw new Error(`API error: ${res.status}\n${text}`);
       }
 
-      const data: any = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({})) as ChatApiResponse;
       const answer = data?.answer ?? "回答に失敗しました。";
 
       setMessages((m) => [
@@ -159,10 +166,10 @@ export default function ChatWidget({
           conversationId: data?.conversation_id,
         },
       ]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: `エラー：${e?.message ?? e}` },
+        { role: "assistant", content: `エラー：${e instanceof Error ? e.message : String(e)}` },
       ]);
     } finally {
       setThinking(false);

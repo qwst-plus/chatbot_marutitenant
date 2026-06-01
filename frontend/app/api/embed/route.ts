@@ -80,7 +80,7 @@ type Retrieved = {
 async function searchSupabase(query: string, topK: number): Promise<Retrieved[]> {
   const qEmb = await embedQuery(query);
 
-  const args: Record<string, any> = {
+  const args: Record<string, unknown> = {
     query_embedding: qEmb,
     match_count: topK,
   };
@@ -93,7 +93,7 @@ async function searchSupabase(query: string, topK: number): Promise<Retrieved[]>
     throw new Error(`supabase.rpc(${RPC_NAME}) failed: ${error.message}`);
   }
 
-  const rows = (data ?? []) as any[];
+  const rows = (data ?? []) as Record<string, unknown>[];
 
   return rows
     .map((row) => {
@@ -243,8 +243,9 @@ export async function POST(req: NextRequest) {
         used_history: history.length, // ★デバッグ：履歴が使われてるか確認できる
       },
     });
-  } catch (e: any) {
-    const msg = `${e?.name ?? "Error"}: ${e?.message ?? String(e)}`;
+  } catch (e: unknown) {
+    const err = e as { name?: string; message?: string };
+    const msg = `${err?.name ?? "Error"}: ${err?.message ?? String(e)}`;
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
