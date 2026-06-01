@@ -40,6 +40,13 @@ const cards: Card[] = [
     icon: "🌐",
     badge: { label: "Ingest", tone: "info" },
   },
+  {
+    title: "運用ダッシュボード",
+    desc: "月次KPI・対話トレンド・緊急ワード分析",
+    href: "/dashboard",
+    icon: "📊",
+    badge: { label: "Report", tone: "ok" },
+  },
   // {
   //   title: "管理",
   //   desc: "全体設定・実行状況・メンテナンス",
@@ -88,7 +95,7 @@ export default function Home() {
           <div>
             <div className="text-sm text-zinc-400">RAG Chatbot</div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              はたらくあさひかわ — 管理ダッシュボード
+              管理ダッシュボード
             </h1>
           </div>
 

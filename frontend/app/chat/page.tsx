@@ -8,7 +8,13 @@ import ChatInput from "@/components/ChatInput";
 import TypingDots from "@/components/TypingDots";
 import BackButton from "@/components/BackButton";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  messageId?: string;
+  conversationId?: string;
+  feedback?: 1 | -1;
+};
 
 // ====== 会話履歴保持（localStorage） ======
 const LS_KEY = "rag_chat_messages_v1";
@@ -78,6 +84,17 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, thinking]);
 
+  const sendFeedback = async (index: number, value: 1 | -1) => {
+    const msg = messages[index];
+    if (!msg.messageId || !msg.conversationId) return;
+    setMessages((m) => m.map((x, i) => i === index ? { ...x, feedback: value } : x));
+    await fetch("/api/feedback", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: msg.conversationId, message_id: msg.messageId, value }),
+    }).catch(console.error);
+  };
+
   const clearChat = () => {
     if (thinking) return;
     setMessages([]);
@@ -133,10 +150,14 @@ export default function ChatPage() {
 
       const botReply = data?.answer ?? "回答に失敗しました。";
 
-      // 返答を追加（functional updateで確実に）
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: botReply },
+        {
+          role: "assistant",
+          content: botReply,
+          messageId: data?.message_id,
+          conversationId: data?.conversation_id,
+        },
       ]);
     } catch (e: any) {
       console.error(e);
@@ -219,9 +240,27 @@ export default function ChatPage() {
 
               <div className="space-y-3">
                 {messages.map((m, i) => (
-                  <ChatBubble key={i} role={m.role}>
-                    {m.content}
-                  </ChatBubble>
+                  <div key={i}>
+                    <ChatBubble role={m.role}>{m.content}</ChatBubble>
+                    {m.role === "assistant" && m.messageId && (
+                      <div className="flex gap-2 mt-1 ml-1">
+                        <button
+                          onClick={() => sendFeedback(i, 1)}
+                          disabled={!!m.feedback}
+                          className={`text-xs px-2 py-1 rounded-lg border transition-colors ${m.feedback === 1 ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10"}`}
+                        >
+                          👍 解決した
+                        </button>
+                        <button
+                          onClick={() => sendFeedback(i, -1)}
+                          disabled={!!m.feedback}
+                          className={`text-xs px-2 py-1 rounded-lg border transition-colors ${m.feedback === -1 ? "bg-blue-500/20 border-blue-500/40 text-blue-300" : "border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10"}`}
+                        >
+                          👎 解決しなかった
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ))}
 
                 {thinking && (

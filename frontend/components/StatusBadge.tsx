@@ -17,7 +17,7 @@ export default function StatusBadge({ status }: { status?: Status | string | nul
     },
     error: {
       label: "エラー",
-      className: "bg-red-900 text-red-300",
+      className: "bg-blue-900 text-blue-300",
     },
   };
 

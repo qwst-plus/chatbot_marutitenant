@@ -208,7 +208,7 @@ export default function IngestPage() {
         </div>
 
         {errorMsg && (
-          <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+          <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-200">
             {errorMsg}
           </div>
         )}
@@ -298,7 +298,7 @@ export default function IngestPage() {
                       <button
                         onClick={() => deleteFile(file.id)}
                         disabled={loading}
-                        className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/15 disabled:opacity-60"
+                        className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/15 disabled:opacity-60"
                         title="削除"
                       >
                         🗑 削除

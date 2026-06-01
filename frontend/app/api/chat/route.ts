@@ -1,9 +1,22 @@
 // app/api/chat/route.ts
+// 埋め込み: OpenAI text-embedding-3-small
+// 回答生成: Claude claude-sonnet-4-6
+// 対象: asahikawa-gas.co.jp（クライアント設定ファイルで切替可）
+
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
+import {
+  startConversation,
+  logUserMessage,
+  logAssistantMessage,
+  escalateConversation,
+} from "@/lib/log";
+import { getClientConfig } from "@/lib/getClientConfig";
+import type { ConversationMode, ClientConfig, ChatRequest, ChatResponse } from "@/types/log";
 
-export const runtime = "nodejs"; // Edgeにしない（OpenAI/Supabaseで安定）
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function env(name: string): string | undefined {
@@ -19,49 +32,45 @@ function mustEnv(name: string): string {
 
 type ClientMsg = { role: "user" | "assistant"; content: string };
 
-type ChatBody = {
+// リクエストボディ（後方互換のため既存フィールドも残す）
+type ChatBody = Partial<ChatRequest> & {
   question?: string;
   message?: string;
   top_k?: number;
   messages?: ClientMsg[];
-  session_id?: string; // フロントから渡すセッションID
 };
 
-// ---- OpenAI ----
+// ---- OpenAI（埋め込みのみ）----
 const openai = new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") });
 
-// ---- Supabase ----
-const SUPABASE_URL =
-  env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
+// ---- Anthropic（回答生成）----
+const anthropic = new Anthropic({ apiKey: mustEnv("ANTHROPIC_API_KEY") });
 
-if (!SUPABASE_URL) {
-  throw new Error(
-    "SUPABASE_URL is missing (set SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL)"
-  );
-}
+// ---- Supabase（ベクター検索）----
+const SUPABASE_URL = env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
+if (!SUPABASE_URL) throw new Error("SUPABASE_URL is missing");
 
-// 優先：SERVICE_ROLE（サーバー専用） → 無ければ ANON（機能制限あり）
 const SUPABASE_KEY =
+  env("SUPABASE_SERVER_KEY") ??
   env("SUPABASE_SERVICE_ROLE_KEY") ??
   env("SUPABASE_ANON_KEY") ??
   env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??
   "";
+if (!SUPABASE_KEY) throw new Error("SUPABASE key is missing");
 
-if (!SUPABASE_KEY) {
-  throw new Error(
-    "SUPABASE key is missing (set SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY)"
-  );
-}
+console.log("[debug] SUPABASE_URL:", SUPABASE_URL);
+console.log("[debug] SUPABASE_KEY prefix:", SUPABASE_KEY.slice(0, 30));
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false },
 });
 
-// RPC名は環境変数で切替可能（match_documents / match_chunks どちらでも）
 const RPC_NAME = env("SUPABASE_MATCH_RPC") ?? "match_documents";
-
-// 任意：閾値（RPCが対応している場合のみ。未対応なら env を設定しない）
 const MATCH_THRESHOLD = Number(env("SUPABASE_MATCH_THRESHOLD") ?? "0");
+
+// ============================================================
+// RAGコア（埋め込み・検索）
+// ============================================================
 
 async function embedQuery(text: string): Promise<number[]> {
   const res = await openai.embeddings.create({
@@ -72,108 +81,128 @@ async function embedQuery(text: string): Promise<number[]> {
 }
 
 type Retrieved = {
+  id: string;
   text: string;
   source: string;
+  title: string;
   similarity: number;
 };
 
-async function searchSupabase(query: string, topK: number): Promise<Retrieved[]> {
+// モードに応じてcategoryフィルタを切り替えてベクター検索
+async function searchSupabase(
+  query: string,
+  topK: number,
+  mode: ConversationMode
+): Promise<Retrieved[]> {
   const qEmb = await embedQuery(query);
 
-  const args: Record<string, any> = {
+  const args: Record<string, unknown> = {
     query_embedding: qEmb,
     match_count: topK,
   };
   if (MATCH_THRESHOLD > 0) args.match_threshold = MATCH_THRESHOLD;
 
-  const { data, error } = await supabase.rpc(RPC_NAME, args);
-
-  if (error) {
-    // RLSや権限不足、RPC名の間違いもここに出る
-    throw new Error(`supabase.rpc(${RPC_NAME}) failed: ${error.message}`);
+  // emergencyモードは緊急カテゴリのドキュメントのみ検索
+  if (mode === "emergency") {
+    args.filter_category = "emergency";
   }
 
-  const rows = (data ?? []) as any[];
+  const { data, error } = await supabase.rpc(RPC_NAME, args);
+  if (error) throw new Error(`supabase.rpc(${RPC_NAME}) failed: ${error.message}`);
 
+  const rows = (data ?? []) as Record<string, unknown>[];
   return rows
     .map((row) => {
       const text = String(
-        row.content ??
-          row.text ??
-          row.chunk ??
-          row.body ??
-          row.page_text ??
-          row.document ??
-          ""
+        row.content ?? row.text ?? row.chunk ?? row.body ?? ""
       ).trim();
-
       const source = String(
-        row.source ??
-          row.url ??
-          row.source_url ??
-          row.page_url ??
-          row.doc_url ??
-          row.path ??
-          ""
+        row.source ?? row.url ?? row.source_url ?? row.path ?? ""
       ).trim();
-
+      const title = String(row.title ?? source).trim();
+      const id = String(row.id ?? "");
       const similarity = Number(row.similarity ?? row.score ?? 0);
-
-      return { text, source, similarity };
+      return { id, text, source, title, similarity };
     })
     .filter((r) => r.text.length > 0);
 }
 
 function lastUserFromHistory(body: ChatBody): string {
-  // messages があれば最後の user を優先
+  const direct = String(body.message ?? body.question ?? "").trim();
+  if (direct) return direct;
   if (Array.isArray(body.messages) && body.messages.length) {
     const lastUser = [...body.messages].reverse().find((m) => m?.role === "user");
-    const q = String(lastUser?.content ?? "").trim();
-    if (q) return q;
+    return String(lastUser?.content ?? "").trim();
   }
-  // 無ければ従来通り
-  return String(body.question ?? body.message ?? "").trim();
+  return "";
 }
 
 function normalizeHistory(body: ChatBody, maxTurns = 60): ClientMsg[] {
   const raw = Array.isArray(body.messages) ? body.messages : [];
-  const cleaned = raw
+  return raw
     .filter((m) => m && (m.role === "user" || m.role === "assistant"))
-    .map((m) => ({
-      role: m.role,
-      content: String(m.content ?? "").slice(0, 4000),
-    }))
-    .filter((m) => m.content.trim().length > 0);
-
-  // 直近だけ
-  return cleaned.slice(-maxTurns);
+    .map((m) => ({ role: m.role, content: String(m.content ?? "").slice(0, 4000) }))
+    .filter((m) => m.content.trim().length > 0)
+    .slice(-maxTurns);
 }
 
-/**
- * 会話履歴 + コンテキスト をまとめてOpenAIへ渡す
- * - 「この中で〜」のような照応は履歴で解決する
- * - ただし根拠は必ずコンテキスト（RAG）
- */
-function buildMessagesWithHistory(opts: {
+// ============================================================
+// システムプロンプト生成（クライアント設定・モード対応）
+// ============================================================
+
+function buildSystemPrompt(
+  categoryId: string | null,
+  mode: ConversationMode,
+  config: ClientConfig
+): string {
+  const base = `あなたは${config.clientId}のカスタマーサポートAIです。
+提供された資料をもとに回答してください。
+資料に根拠がない場合は「お電話でご確認ください」と案内してください。
+回答の末尾には「この回答は解決の参考になりましたか？」を記載してください。
+お電話での案内が必要な場合：${config.phoneNumbers.normal}（${config.businessHours}）
+
+【回答形式の注意】
+- マークダウン記法（##、**、---、|テーブル|など）は使わないでください
+- 絵文字は使わないでください
+- 箇条書きは「・」を使ってください
+- 自然な日本語の文章で回答してください`;
+
+  const categoryContext = categoryId
+    ? `\nこのユーザーは「${categoryId}」に関心があります。`
+    : "";
+
+  const emergencyContext =
+    mode === "emergency"
+      ? `\n\n【緊急事態対応モード】
+現在、緊急事態が発生している可能性があります。
+避難・安全確保に関する情報を最優先で案内してください。
+緊急連絡先：${config.phoneNumbers.emergency}（24時間対応）`
+      : mode === "notice"
+      ? `\n\n【注意報モード】
+現在、注意報が発令されています。
+通常の案内に加え、安全に関する情報も合わせて案内してください。`
+      : "";
+
+  return base + categoryContext + emergencyContext;
+}
+
+// ============================================================
+// Claude向けメッセージ構築
+// ============================================================
+
+function buildClaudeMessages(opts: {
   question: string;
   history: ClientMsg[];
   contexts: { text: string; source: string }[];
-}) {
+}): Array<{ role: "user" | "assistant"; content: string }> {
   const { question, history, contexts } = opts;
 
   const ctx = contexts
-    .map((c, i) => `[#${i + 1}] source: ${c.source}\n${c.text}`.trim())
+    .map((c) => `source: ${c.source}\n${c.text}`.trim())
     .join("\n\n");
 
-  const system = `あなたは与えられたコンテキストに基づいて回答するアシスタントです。
-- 根拠がコンテキストに無い内容は推測しないで「不明」「資料内では特定できません」と答えてください。
-- ユーザーの「この中で」「それ」「さっきの」などは会話履歴を参照して解釈してください。
-- ただし“事実の根拠”は必ずコンテキストに置いてください（履歴は意図解釈用）。
-- 回答は日本語で、できるだけ具体的に。会社名がコンテキスト内に明記されていれば列挙してください。`;
-
-  // 最後に context と 今回の質問をまとめて投げる
-  const finalUser = `# コンテキスト
-${ctx || "(コンテキストなし)"}
+  const finalUser = `# 資料
+${ctx || "(資料なし)"}
 
 # 今回の質問
 ${question}
@@ -181,107 +210,164 @@ ${question}
 # 回答（日本語）
 `;
 
-  // 履歴は system の次に並べる
   return [
-    { role: "system" as const, content: system },
     ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     { role: "user" as const, content: finalUser },
   ];
 }
 
+// ============================================================
+// POST /api/chat
+// ============================================================
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatBody;
 
-    // ★検索クエリは「最後の user」を使う（ここが会話継続のキモ）
     const q = lastUserFromHistory(body);
     if (!q) {
       return NextResponse.json(
-        { error: "question (or message) is required" },
+        { error: "message (or question) is required" },
         { status: 400 }
       );
     }
 
-    // top_k（必要なら上限を上げてOK）
     const topK = Math.max(1, Math.min(Number(body.top_k ?? 20), 60));
+    const clientId = body.client_id ?? env("NEXT_PUBLIC_CLIENT_ID") ?? "asahikawa-gas";
+    const mode: ConversationMode = body.mode ?? "normal";
+    const sessionId = body.session_id ?? crypto.randomUUID();
 
-    // 1) 検索（RAG）
-    const retrieved = await searchSupabase(q, topK);
+    // ── クライアント設定取得 ──────────────────────────────────
+    const config = await getClientConfig(clientId);
 
-    // 2) 履歴（意図解釈用）
+    // ── 1) RAG検索（モードによってカテゴリフィルタを切替）────
+    const retrieved = await searchSupabase(q, topK, mode);
+
+    // ── 2) 会話履歴 ──────────────────────────────────────────
     const history = normalizeHistory(body, 60);
 
-    // 3) 回答生成（履歴 + context）
-    const messages = buildMessagesWithHistory({
+    // ── 3) エスカレーション判定（クライアント設定のキーワード使用）──
+    const matchedKeyword =
+      config.emergencyKeywords.find((kw) => q.includes(kw)) ?? null;
+    const confidenceScore = retrieved.length > 0 ? retrieved[0].similarity : 0;
+    const isLowConfidence = confidenceScore < 0.5 && retrieved.length > 0;
+
+    // ── カテゴリ自動判定 ──────────────────────────────────────
+    // 緊急キーワードにマッチ → キーワード名をそのままカテゴリに（例: "ガス漏れ"）
+    // それ以外 → topicKeywords でトピック分類（例: "料金・請求"）
+    // どれにも該当しない → "その他"
+    let autoCategory: string;
+    if (matchedKeyword) {
+      autoCategory = matchedKeyword;
+    } else {
+      const matchedTopic = config.topicKeywords.find((t) =>
+        t.keywords.some((kw) => q.includes(kw))
+      );
+      autoCategory = matchedTopic?.label ?? "その他";
+    }
+    const categoryId = body.category_id ?? autoCategory;
+
+    // ── 4) システムプロンプト生成 ─────────────────────────────
+    const systemPrompt = buildSystemPrompt(categoryId, mode, config);
+
+    // ── 5) 回答生成（Claude・プロンプトキャッシュ対応）──────
+    const claudeMessages = buildClaudeMessages({
       question: q,
       history,
       contexts: retrieved.map((r) => ({ text: r.text, source: r.source })),
     });
 
-    const chat = await openai.chat.completions.create({
-      model: env("OPENAI_CHAT_MODEL") ?? "gpt-4.1-mini",
-      messages,
-      temperature: 0.2,
+    const startMs = Date.now();
+    const chat = await anthropic.messages.create({
+      model: env("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6",
+      max_tokens: 2048,
+      // システムプロンプトをキャッシュ（5分TTL）
+      system: [
+        {
+          type: "text",
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages: claudeMessages,
     });
+    const responseMs = Date.now() - startMs;
 
-    const answer = chat.choices[0]?.message?.content ?? "";
+    const rawAnswer =
+      chat.content[0]?.type === "text" ? chat.content[0].text : "";
+    const answer = rawAnswer.replace(/\[#\d+\]/g, "").replace(/\s{2,}/g, " ").trim();
 
-    // references 形式（フロントが使いやすい）
-    const references = retrieved.map((r) => ({
-      source: r.source,
-      score: Number(r.similarity),
-    }));
+    // ── 6) ログ書き込み ───────────────────────────────────────
+    let conversationId = body.conversation_id ?? null;
+    let messageId = "";
 
-    // ── 会話ログを Supabase に保存 ────────────────────────────────
-    if (body.session_id) {
-      try {
-        // セッションを upsert（既存なら無視）
-        await supabase
-          .from("sessions")
-          .upsert(
-            { id: body.session_id, municipality_id: "htrk-asahikawa" },
-            { onConflict: "id" }
-          );
-
-        // turn_order は body.messages の長さで決まる
-        // （フロントは常に「今回のuser発話」を末尾に含めて送る）
-        const userTurnOrder = body.messages?.length ?? 1;
-        const assistantTurnOrder = userTurnOrder + 1;
-
-        await supabase.from("turns").insert([
-          {
-            session_id: body.session_id,
-            turn_order: userTurnOrder,
-            role: "user",
-            content: q,
-          },
-          {
-            session_id: body.session_id,
-            turn_order: assistantTurnOrder,
-            role: "assistant",
-            content: answer,
-          },
-        ]);
-      } catch (logErr) {
-        // ログ失敗でも回答は返す
-        console.error("[log] failed to save turn:", logErr);
+    try {
+      if (!conversationId) {
+        conversationId = await startConversation({
+          sessionId,
+          clientId,
+          categoryId,
+          mode,
+        });
       }
+
+      await logUserMessage({ conversationId, content: q });
+
+      if (matchedKeyword) {
+        await escalateConversation({ conversationId, escalateType: "keyword" });
+      } else if (isLowConfidence) {
+        await escalateConversation({
+          conversationId,
+          escalateType: "low_confidence",
+        });
+      }
+
+      messageId = await logAssistantMessage({
+        conversationId,
+        content: answer,
+        confidenceScore,
+        keywordMatched: matchedKeyword,
+        retrievedDocIds: retrieved.map((r) => r.id).filter(Boolean),
+        retrievedDocTitles: retrieved.map((r) => r.title),
+        retrievedDocSources: retrieved.map((r) => r.source),
+        responseMs,
+        unresolved: isLowConfidence && !matchedKeyword,
+      });
+    } catch (logErr) {
+      console.error("[log] failed:", logErr);
     }
-    // ─────────────────────────────────────────────────────────────
+
+    // ── 7) レスポンス ─────────────────────────────────────────
+    const response: ChatResponse = {
+      message_id: messageId,
+      conversation_id: conversationId ?? "",
+      answer,
+      confidence_score: confidenceScore,
+      retrieved_docs: retrieved.map((r) => ({
+        id: r.id,
+        title: r.title,
+        source: r.source,
+      })),
+      escalated: !!(matchedKeyword || isLowConfidence),
+      keyword_matched: matchedKeyword,
+      response_ms: responseMs,
+    };
 
     return NextResponse.json({
-      answer,
-      references,
+      ...response,
+      // デバッグ用メタ情報
       meta: {
         top_k: topK,
         rpc: RPC_NAME,
         hits: retrieved.length,
-        threshold: MATCH_THRESHOLD,
-        used_history: history.length,
+        mode,
+        client_id: clientId,
+        model: env("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6",
+        cache_tokens: chat.usage.cache_read_input_tokens ?? 0,
       },
     });
-  } catch (e: any) {
-    const msg = `${e?.name ?? "Error"}: ${e?.message ?? String(e)}`;
+  } catch (e: unknown) {
+    const err = e as { name?: string; message?: string };
+    const msg = `${err?.name ?? "Error"}: ${err?.message ?? String(e)}`;
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -240,7 +240,7 @@ export default function WebSiteManagePage() {
         </div>
 
         {errorMsg && (
-          <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+          <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-200">
             {errorMsg}
           </div>
         )}
@@ -320,7 +320,7 @@ export default function WebSiteManagePage() {
                   {bulkResult.ng.length}件失敗
                 </div>
                 {bulkResult.ng.length > 0 && (
-                  <div className="mt-2 space-y-1 text-red-200">
+                  <div className="mt-2 space-y-1 text-blue-200">
                     {bulkResult.ng.slice(0, 5).map((x) => (
                       <div key={x.url} className="truncate">
                         NG: {x.url}（{x.reason}）
@@ -374,7 +374,7 @@ export default function WebSiteManagePage() {
                           </span>
                         )}
                         {site.error_message && (
-                          <span className="ml-2 text-red-200">・{site.error_message}</span>
+                          <span className="ml-2 text-blue-200">・{site.error_message}</span>
                         )}
                       </div>
                     </div>
@@ -405,7 +405,7 @@ export default function WebSiteManagePage() {
                       <button
                         onClick={() => deleteSite(site.id)}
                         disabled={loading}
-                        className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200 hover:bg-red-500/15 disabled:opacity-60"
+                        className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-200 hover:bg-blue-500/15 disabled:opacity-60"
                         title="削除"
                       >
                         🗑 削除

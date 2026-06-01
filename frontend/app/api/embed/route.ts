@@ -41,6 +41,7 @@ if (!SUPABASE_URL) {
 
 // 優先：SERVICE_ROLE（サーバー専用） → 無ければ ANON（機能制限あり）
 const SUPABASE_KEY =
+  env("SUPABASE_SERVER_KEY") ??
   env("SUPABASE_SERVICE_ROLE_KEY") ??
   env("SUPABASE_ANON_KEY") ??
   env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??

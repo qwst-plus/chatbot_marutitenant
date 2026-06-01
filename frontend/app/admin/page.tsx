@@ -122,7 +122,7 @@ export default function AdminPage() {
           </div>
 
           {errorMsg && (
-            <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">
+            <div className="mt-4 rounded-2xl border border-blue-500/20 bg-blue-500/10 p-3 text-sm text-blue-200">
               {errorMsg}
             </div>
           )}
