@@ -468,7 +468,7 @@ async function agenticRAG(opts: {
   let finalAnswer = "";
 
   while (true) {
-    const response = await anthropic.messages.create({
+    const response = await getAnthropic().messages.create({
       model: env("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6",
       max_tokens: 2048,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
@@ -515,7 +515,7 @@ async function agenticRAG(opts: {
 
     // 上限到達 → ツールなしで強制最終回答
     if (iterations >= AGENTIC_MAX_ITER) {
-      const finalResp = await anthropic.messages.create({
+      const finalResp = await getAnthropic().messages.create({
         model: env("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6",
         max_tokens: 2048,
         system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
