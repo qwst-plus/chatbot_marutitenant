@@ -185,7 +185,7 @@ ${question}
 export async function POST(req: NextRequest) {
   try {
     const clients = getClients();
-    const { openai } = clients;
+    const { openai, RPC_NAME, MATCH_THRESHOLD } = clients;
     const body = (await req.json()) as ChatBody;
 
     // ★検索クエリは「最後の user」を使う（ここが会話継続のキモ）
