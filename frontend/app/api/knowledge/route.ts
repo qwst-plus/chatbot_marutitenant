@@ -4,6 +4,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
 // GET /api/knowledge?page=1&limit=50
 // ナレッジ一覧を取得（source_url / title / category / chunk_strategyを返す）
 export async function GET(req: NextRequest) {

@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveFeedback, escalateFeedback } from "@/lib/log";
 
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
 // PATCH /api/feedback
 // body: { conversation_id, message_id, value: 1 | -1 }
 export async function PATCH(req: NextRequest) {

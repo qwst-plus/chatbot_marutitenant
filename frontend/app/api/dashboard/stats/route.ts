@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
 const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID ?? "default";
 
 // GET /api/dashboard/stats?year=2026&month=3

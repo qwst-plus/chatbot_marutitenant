@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { ReadonlyURLSearchParams } from "next/navigation";
 import EmbedClient from "./EmbedClient";
 
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 // サーバーコンポーネントでURLパラメータを取得してクライアントに渡す

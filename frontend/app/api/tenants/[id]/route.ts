@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 const ADMIN_SECRET = process.env.ADMIN_SECRET ?? "";
 
