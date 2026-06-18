@@ -26,44 +26,32 @@ type ChatBody = {
   messages?: ClientMsg[]; // ★追加：会話履歴
 };
 
-// ---- OpenAI ----
-const openai = new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") });
+function getClients() {
+  const openai = new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") });
 
-// ---- Supabase ----
-const SUPABASE_URL =
-  env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
+  const SUPABASE_URL =
+    env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
+  if (!SUPABASE_URL) throw new Error("SUPABASE_URL is missing");
 
-if (!SUPABASE_URL) {
-  throw new Error(
-    "SUPABASE_URL is missing (set SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL)"
-  );
+  const SUPABASE_KEY =
+    env("SUPABASE_SERVER_KEY") ??
+    env("SUPABASE_SERVICE_ROLE_KEY") ??
+    env("SUPABASE_ANON_KEY") ??
+    env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??
+    "";
+  if (!SUPABASE_KEY) throw new Error("SUPABASE key is missing");
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false },
+  });
+
+  const RPC_NAME = env("SUPABASE_MATCH_RPC") ?? "match_documents";
+  const MATCH_THRESHOLD = Number(env("SUPABASE_MATCH_THRESHOLD") ?? "0");
+
+  return { openai, supabase, RPC_NAME, MATCH_THRESHOLD };
 }
 
-// 優先：SERVICE_ROLE（サーバー専用） → 無ければ ANON（機能制限あり）
-const SUPABASE_KEY =
-  env("SUPABASE_SERVER_KEY") ??
-  env("SUPABASE_SERVICE_ROLE_KEY") ??
-  env("SUPABASE_ANON_KEY") ??
-  env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??
-  "";
-
-if (!SUPABASE_KEY) {
-  throw new Error(
-    "SUPABASE key is missing (set SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY)"
-  );
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false },
-});
-
-// RPC名は環境変数で切替可能（match_documents / match_chunks どちらでも）
-const RPC_NAME = env("SUPABASE_MATCH_RPC") ?? "match_documents";
-
-// 任意：閾値（RPCが対応している場合のみ。未対応なら env を設定しない）
-const MATCH_THRESHOLD = Number(env("SUPABASE_MATCH_THRESHOLD") ?? "0");
-
-async function embedQuery(text: string): Promise<number[]> {
+async function embedQuery(openai: OpenAI, text: string): Promise<number[]> {
   const res = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: text,
@@ -77,8 +65,13 @@ type Retrieved = {
   similarity: number;
 };
 
-async function searchSupabase(query: string, topK: number): Promise<Retrieved[]> {
-  const qEmb = await embedQuery(query);
+async function searchSupabase(
+  clients: ReturnType<typeof getClients>,
+  query: string,
+  topK: number
+): Promise<Retrieved[]> {
+  const { openai, supabase, RPC_NAME, MATCH_THRESHOLD } = clients;
+  const qEmb = await embedQuery(openai, query);
 
   const args: Record<string, unknown> = {
     query_embedding: qEmb,
@@ -191,6 +184,8 @@ ${question}
 
 export async function POST(req: NextRequest) {
   try {
+    const clients = getClients();
+    const { openai } = clients;
     const body = (await req.json()) as ChatBody;
 
     // ★検索クエリは「最後の user」を使う（ここが会話継続のキモ）
@@ -206,7 +201,7 @@ export async function POST(req: NextRequest) {
     const topK = Math.max(1, Math.min(Number(body.top_k ?? 20), 60));
 
     // 1) 検索（RAG）
-    const retrieved = await searchSupabase(q, topK);
+    const retrieved = await searchSupabase(clients, q, topK);
 
     // 2) 履歴（意図解釈用）
     const history = normalizeHistory(body, 60);

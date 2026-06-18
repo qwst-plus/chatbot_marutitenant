@@ -41,19 +41,17 @@ type ChatBody = Partial<ChatRequest> & {
   messages?: ClientMsg[];
 };
 
-// ---- OpenAI（埋め込みのみ）----
-const openai = new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") });
-
-// ---- Anthropic（回答生成・Reranker・Reflection）----
-const anthropic = new Anthropic({ apiKey: mustEnv("ANTHROPIC_API_KEY") });
-
-// ---- Google Gemini（Query Rewrite・Context Compression）----
-const GEMINI_API_KEY = env("GOOGLE_GENERATIVE_AI_API_KEY") ?? "";
-const geminiAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
-// gemini-2.5-flash: 精度重視・Thinking無効化（Edge Runtime対応）
+// ---- クライアント遅延生成（ビルド時に環境変数がなくてもエラーにしない）----
+function getOpenAI() { return new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") }); }
+function getAnthropic() { return new Anthropic({ apiKey: mustEnv("ANTHROPIC_API_KEY") }); }
+function getGeminiAI() {
+  const key = env("GOOGLE_GENERATIVE_AI_API_KEY");
+  return key ? new GoogleGenerativeAI(key) : null;
+}
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 async function geminiComplete(system: string, user: string, maxTokens = 1024): Promise<string> {
+  const geminiAI = getGeminiAI();
   if (!geminiAI) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set");
   const model = geminiAI.getGenerativeModel({
     model: GEMINI_MODEL,
@@ -70,24 +68,13 @@ async function geminiComplete(system: string, user: string, maxTokens = 1024): P
   return result.response.text();
 }
 
-// ---- Supabase（ベクター検索）----
-const SUPABASE_URL = env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
-if (!SUPABASE_URL) throw new Error("SUPABASE_URL is missing");
-
-const SUPABASE_KEY =
-  env("SUPABASE_SERVER_KEY") ??
-  env("SUPABASE_SERVICE_ROLE_KEY") ??
-  env("SUPABASE_ANON_KEY") ??
-  env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??
-  "";
-if (!SUPABASE_KEY) throw new Error("SUPABASE key is missing");
-
-console.log("[debug] SUPABASE_URL:", SUPABASE_URL);
-console.log("[debug] SUPABASE_KEY prefix:", SUPABASE_KEY.slice(0, 30));
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false },
-});
+function getSupabase() {
+  const url = env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
+  if (!url) throw new Error("SUPABASE_URL is missing");
+  const key = env("SUPABASE_SERVER_KEY") ?? env("SUPABASE_SERVICE_ROLE_KEY") ?? env("SUPABASE_ANON_KEY") ?? env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? "";
+  if (!key) throw new Error("SUPABASE key is missing");
+  return createClient(url, key, { auth: { persistSession: false } });
+}
 
 const RPC_NAME = env("SUPABASE_MATCH_RPC") ?? "hybrid_search_documents";
 const MATCH_THRESHOLD = Number(env("SUPABASE_MATCH_THRESHOLD") ?? "0");
@@ -100,7 +87,7 @@ const RERANKER_MODEL = "claude-haiku-4-5-20251001";
 const RERANKER_TOP_N = Number(env("RERANKER_TOP_N") ?? "5");
 
 async function embedQuery(text: string): Promise<number[]> {
-  const res = await openai.embeddings.create({
+  const res = await getOpenAI().embeddings.create({
     model: "text-embedding-3-small",
     input: text,
   });
@@ -140,7 +127,7 @@ async function searchSupabase(
     args.filter_category = "emergency";
   }
 
-  const { data, error } = await supabase.rpc(RPC_NAME, args);
+  const { data, error } = await getSupabase().rpc(RPC_NAME, args);
   if (error) throw new Error(`supabase.rpc(${RPC_NAME}) failed: ${error.message}`);
 
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -188,7 +175,7 @@ JSONのみを返してください（説明不要）:
 {"scores": [{"index": 1, "score": 8}, {"index": 2, "score": 3}, ...]}`;
 
   try {
-    const res = await anthropic.messages.create({
+    const res = await getAnthropic().messages.create({
       model: RERANKER_MODEL,
       max_tokens: 512,
       messages: [{ role: "user", content: prompt }],
@@ -374,7 +361,7 @@ async function reflectOnAnswer(
 {"enough": true, "reason": "評価理由", "need_more_search": false, "additional_queries": []}`;
 
   try {
-    const res = await anthropic.messages.create({
+    const res = await getAnthropic().messages.create({
       model: RERANKER_MODEL,
       max_tokens: 512,
       system,
