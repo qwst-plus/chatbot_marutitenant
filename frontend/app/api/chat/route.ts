@@ -25,11 +25,7 @@ function env(name: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
-function mustEnv(name: string): string {
-  const v = env(name);
-  if (!v) throw new Error(`${name} is missing`);
-  return v;
-}
+
 
 type ClientMsg = { role: "user" | "assistant"; content: string };
 
@@ -41,9 +37,15 @@ type ChatBody = Partial<ChatRequest> & {
   messages?: ClientMsg[];
 };
 
-// ---- クライアント遅延生成（ビルド時に環境変数がなくてもエラーにしない）----
-function getOpenAI() { return new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") }); }
-function getAnthropic() { return new Anthropic({ apiKey: mustEnv("ANTHROPIC_API_KEY") }); }
+// ---- クライアント遅延生成（POST 冒頭の env チェック通過後にのみ呼ばれる）----
+function getOpenAI() {
+  const key = env("OPENAI_API_KEY")!;
+  return new OpenAI({ apiKey: key });
+}
+function getAnthropic() {
+  const key = env("ANTHROPIC_API_KEY")!;
+  return new Anthropic({ apiKey: key });
+}
 function getGeminiAI() {
   const key = env("GOOGLE_GENERATIVE_AI_API_KEY");
   return key ? new GoogleGenerativeAI(key) : null;
@@ -70,9 +72,7 @@ async function geminiComplete(system: string, user: string, maxTokens = 1024): P
 
 function getSupabase() {
   const url = env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
-  if (!url) throw new Error("SUPABASE_URL is missing");
   const key = env("SUPABASE_SERVER_KEY") ?? env("SUPABASE_SERVICE_ROLE_KEY") ?? env("SUPABASE_ANON_KEY") ?? env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? "";
-  if (!key) throw new Error("SUPABASE key is missing");
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
@@ -539,6 +539,9 @@ async function agenticRAG(opts: {
 // POST /api/chat
 // ============================================================
 export async function POST(req: NextRequest) {
+  if (!env("OPENAI_API_KEY") || !env("ANTHROPIC_API_KEY")) {
+    return NextResponse.json({ error: "Service not configured" }, { status: 503 });
+  }
   try {
     const body = (await req.json()) as ChatBody;
 

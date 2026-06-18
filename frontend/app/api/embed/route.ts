@@ -11,40 +11,31 @@ function env(name: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
-function mustEnv(name: string): string {
-  const v = env(name);
-  if (!v) throw new Error(`${name} is missing`);
-  return v;
-}
-
 type ClientMsg = { role: "user" | "assistant"; content: string };
 
 type ChatBody = {
   question?: string;
   message?: string;
   top_k?: number;
-  messages?: ClientMsg[]; // ★追加：会話履歴
+  messages?: ClientMsg[];
 };
 
 function getClients() {
-  const openai = new OpenAI({ apiKey: mustEnv("OPENAI_API_KEY") });
-
-  const SUPABASE_URL =
-    env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
-  if (!SUPABASE_URL) throw new Error("SUPABASE_URL is missing");
-
-  const SUPABASE_KEY =
+  const apiKey = env("OPENAI_API_KEY");
+  const supabaseUrl = env("SUPABASE_URL") ?? env("NEXT_PUBLIC_SUPABASE_URL") ?? "";
+  const supabaseKey =
     env("SUPABASE_SERVER_KEY") ??
     env("SUPABASE_SERVICE_ROLE_KEY") ??
     env("SUPABASE_ANON_KEY") ??
     env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??
     "";
-  if (!SUPABASE_KEY) throw new Error("SUPABASE key is missing");
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  if (!apiKey || !supabaseUrl || !supabaseKey) return null;
+
+  const openai = new OpenAI({ apiKey });
+  const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: { persistSession: false },
   });
-
   const RPC_NAME = env("SUPABASE_MATCH_RPC") ?? "match_documents";
   const MATCH_THRESHOLD = Number(env("SUPABASE_MATCH_THRESHOLD") ?? "0");
 
@@ -183,8 +174,11 @@ ${question}
 }
 
 export async function POST(req: NextRequest) {
+  const clients = getClients();
+  if (!clients) {
+    return NextResponse.json({ error: "Service not configured" }, { status: 503 });
+  }
   try {
-    const clients = getClients();
     const { openai, RPC_NAME, MATCH_THRESHOLD } = clients;
     const body = (await req.json()) as ChatBody;
 
