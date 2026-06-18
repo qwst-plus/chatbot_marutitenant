@@ -2,7 +2,7 @@
 // RAGナレッジ（documentsテーブル）のCRUD管理API
 
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 // GET /api/knowledge?page=1&limit=50
 // ナレッジ一覧を取得（source_url / title / category / chunk_strategyを返す）
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? "50")));
     const offset = (page - 1) * limit;
 
-    const { data, error, count } = await supabaseAdmin
+    const { data, error, count } = await getSupabaseAdmin()
       .from("documents")
       .select(
         "id, title, source, source_url, category, chunk_strategy, last_crawled_at, created_at",
@@ -46,7 +46,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const { error } = await supabaseAdmin
+    const { error } = await getSupabaseAdmin()
       .from("documents")
       .delete()
       .eq("id", id);
@@ -82,7 +82,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "no fields to update" }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
       .from("documents")
       .update(updates)
       .eq("id", body.id)

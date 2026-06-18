@@ -1,6 +1,6 @@
 // app/api/dashboard/stats/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID ?? "default";
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       modeHistory,
     ] = await Promise.all([
       // 1. 選択月の会話（サマリー用）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("conversations")
         .select("id, escalated, resolved")
         .eq("client_id", CLIENT_ID)
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         .lt("started_at", endDate),
 
       // 2. 月別対話件数推移（過去6ヶ月）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("conversations")
         .select("started_at")
         .eq("client_id", CLIENT_ID)
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
         .order("started_at"),
 
       // 3. ヒートマップ（選択月のユーザーメッセージ）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("messages")
         .select("created_at")
         .eq("role", "user")
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
         .lt("created_at", endDate),
 
       // 4. よく聞かれた質問（選択月）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("messages")
         .select("content")
         .eq("role", "user")
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
         .lt("created_at", endDate),
 
       // 5. 参照ドキュメント（選択月）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("messages")
         .select("retrieved_doc_titles, retrieved_doc_sources, created_at")
         .eq("role", "assistant")
@@ -71,12 +71,12 @@ export async function GET(req: NextRequest) {
         .lt("created_at", endDate),
 
       // 6. 未参照ドキュメント（全ドキュメント取得 → 選択月に参照されなかったものをフィルタ）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("documents")
         .select("id, title, url, source_url, updated_at"),
 
       // 7. 緊急ワード（選択月）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("messages")
         .select("keyword_matched, created_at")
         .not("keyword_matched", "is", null)
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
         .lt("created_at", endDate),
 
       // 8. カテゴリ分布（選択月）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("conversations")
         .select("category_id")
         .eq("client_id", CLIENT_ID)
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
         .lt("started_at", endDate),
 
       // 9. モード履歴（選択月の normal 以外の会話）
-      supabaseAdmin
+      getSupabaseAdmin()
         .from("conversations")
         .select("id, mode, started_at, ended_at")
         .eq("client_id", CLIENT_ID)

@@ -2,7 +2,7 @@
 // Supabase conversations/messages テーブルへのログ書き込みライブラリ
 // サービスロールキーを使用してRLSをバイパスする（サーバーサイド専用）
 
-import { supabaseAdmin } from "./supabase";
+import { getSupabaseAdmin } from "./supabase";
 import type { ConversationMode, EscalateType } from "@/types/log";
 
 // ── セッション開始 ─────────────────────────────────────────────
@@ -12,7 +12,7 @@ export async function startConversation(params: {
   categoryId: string | null;
   mode: ConversationMode;
 }): Promise<string> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from("conversations")
     .insert({
       session_id: params.sessionId,
@@ -32,7 +32,7 @@ export async function logUserMessage(params: {
   conversationId: string;
   content: string;
 }): Promise<string> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from("messages")
     .insert({
       conversation_id: params.conversationId,
@@ -59,7 +59,7 @@ export async function logAssistantMessage(params: {
   responseMs: number;
   unresolved: boolean;
 }): Promise<string> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from("messages")
     .insert({
       conversation_id: params.conversationId,
@@ -88,11 +88,11 @@ export async function resolveFeedback(params: {
   const now = new Date().toISOString();
 
   const [msgResult, convResult] = await Promise.all([
-    supabaseAdmin
+    getSupabaseAdmin()
       .from("messages")
       .update({ feedback: 1, feedback_at: now })
       .eq("id", params.messageId),
-    supabaseAdmin
+    getSupabaseAdmin()
       .from("conversations")
       .update({ resolved: true, resolved_at: now, resolved_method: "feedback_positive", escalated: false })
       .eq("id", params.conversationId),
@@ -110,11 +110,11 @@ export async function escalateFeedback(params: {
   const now = new Date().toISOString();
 
   const [msgResult, convResult] = await Promise.all([
-    supabaseAdmin
+    getSupabaseAdmin()
       .from("messages")
       .update({ feedback: -1, feedback_at: now, unresolved: true })
       .eq("id", params.messageId),
-    supabaseAdmin
+    getSupabaseAdmin()
       .from("conversations")
       .update({ escalated: true, escalate_type: "manual" })
       .eq("id", params.conversationId),
@@ -129,7 +129,7 @@ export async function escalateConversation(params: {
   conversationId: string;
   escalateType: EscalateType;
 }): Promise<void> {
-  const { error } = await supabaseAdmin
+  const { error } = await getSupabaseAdmin()
     .from("conversations")
     .update({ escalated: true, escalate_type: params.escalateType })
     .eq("id", params.conversationId);
@@ -143,7 +143,7 @@ export async function autoResolve(params: {
 }): Promise<void> {
   const now = new Date().toISOString();
 
-  const { error } = await supabaseAdmin
+  const { error } = await getSupabaseAdmin()
     .from("conversations")
     .update({ resolved: true, resolved_at: now, resolved_method: "auto_timeout" })
     .eq("id", params.conversationId);
@@ -155,7 +155,7 @@ export async function autoResolve(params: {
 export async function endConversation(params: {
   conversationId: string;
 }): Promise<void> {
-  const { error } = await supabaseAdmin
+  const { error } = await getSupabaseAdmin()
     .from("conversations")
     .update({ ended_at: new Date().toISOString() })
     .eq("id", params.conversationId);

@@ -1,6 +1,6 @@
 // app/api/dashboard/export/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_CLIENT_ID ?? "default";
 
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const from = searchParams.get("from");
     const to = searchParams.get("to");
 
-    let query = supabaseAdmin
+    let query = getSupabaseAdmin()
       .from("conversations")
       .select("id, session_id, category_id, mode, started_at, ended_at, escalated, escalate_type, resolved, resolved_method")
       .eq("client_id", CLIENT_ID)
